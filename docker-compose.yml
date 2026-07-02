@@ -1,7 +1,14 @@
 version: '3.8'
-
 services:
-  gestor-multas-simit:
-    build: .
-    container_name: multas
-    restart: unless-stopped
+  web-multas:
+    build: .
+    container_name: gestor-multas-simit
+    ports:
+      - "5000:5000"
+    restart: always
+    volumes:
+      - base_de_datos_multas:/app/data
+    environment:
+      - PYTHONUNBUFFERED=1
+volumes:
+  base_de_datos_multas:
