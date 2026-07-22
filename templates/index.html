@@ -1049,7 +1049,11 @@
                 return;
             }
 
-            tbody.innerHTML = registros.map(r => `
+            // LIMITE PARA NO CONGELAR EL NAVEGADOR
+            const limite = 100;
+            const mostrar = registros.slice(0, limite);
+
+            let html = mostrar.map(r => `
                 <tr>
                     <td style="font-weight:600; color: var(--text-primary);">${r.cedula}</td>
                     <td>${r.nombre_cliente || '—'}</td>
@@ -1070,6 +1074,14 @@
                     </td>
                 </tr>
             `).join('');
+
+            if (registros.length > limite) {
+                html += `<tr><td colspan="7" style="text-align:center; padding: 15px; color: var(--text-muted); font-weight: 600;">
+                    ⚠️ Mostrando ${limite} de ${registros.length} resultados. Usa el buscador de arriba o descarga el Excel para ver la lista completa.
+                </td></tr>`;
+            }
+
+            tbody.innerHTML = html;
         }
 
         function filtrarTabla() {
