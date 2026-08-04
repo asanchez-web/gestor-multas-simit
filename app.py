@@ -201,14 +201,33 @@ def descargar():
     """Genera y descarga el histórico completo o filtrado como Excel."""
     filtro = request.args.get('filtro')
     conn = sqlite3.connect(DB_PATH)
+    query = """
+    WITH RankedConsultas AS (
+        SELECT h.cedula, h.total_multa, h.fecha_consulta,
+               ROW_NUMBER() OVER(PARTITION BY h.cedula ORDER BY h.fecha_consulta DESC) as rn
+        FROM historial_consultas h
+    )
+    SELECT 
+        c.cedula,
+        c.nombre_cliente,
+        c.numero_credito,
+        c.tiene_multa,
+        c.total_multa,
+        c.ultima_consulta,
+        COALESCE(r1.total_multa - r2.total_multa, 0) as diferencia_vs_mes_anterior
+    FROM clientes c
+    LEFT JOIN RankedConsultas r1 ON c.cedula = r1.cedula AND r1.rn = 1
+    LEFT JOIN RankedConsultas r2 ON c.cedula = r2.cedula AND r2.rn = 2
+    """
     
     if filtro == 'con_multa':
-        df_bd = pd.read_sql_query("SELECT * FROM clientes WHERE tiene_multa = 'SI' ORDER BY ultima_consulta DESC", conn)
+        query += " WHERE c.tiene_multa = 'SI' ORDER BY c.ultima_consulta DESC"
         prefijo = "Solo_Multados"
     else:
-        df_bd = pd.read_sql_query("SELECT * FROM clientes ORDER BY ultima_consulta DESC", conn)
+        query += " ORDER BY c.ultima_consulta DESC"
         prefijo = "Historico_Total"
         
+    df_bd = pd.read_sql_query(query, conn)
     conn.close()
 
     if df_bd.empty:
@@ -245,9 +264,9 @@ def estadisticas():
     SELECT 
         c.cedula,
         c.total_multa as deuda_actual,
-        COALESCE(prev.total_multa, 0) as deuda_anterior
+        prev.total_multa as deuda_anterior
     FROM RankedConsultas c
-    LEFT JOIN RankedConsultas prev ON c.cedula = prev.cedula AND prev.rn = 2
+    JOIN RankedConsultas prev ON c.cedula = prev.cedula AND prev.rn = 2
     WHERE c.rn = 1
     """
     df_tendencia = pd.read_sql_query(query_tendencia, conn)
