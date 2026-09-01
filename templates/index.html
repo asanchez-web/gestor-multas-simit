@@ -811,6 +811,7 @@
                             <th>Cédula</th>
                             <th>Nombre</th>
                             <th>Nro. Crédito</th>
+                            <th>Celular</th>
                             <th>Multa</th>
                             <th>Valor Total</th>
                             <th>Última Consulta</th>
@@ -819,7 +820,7 @@
                     </thead>
                     <tbody id="tablaBody">
                         <tr>
-                            <td colspan="6">
+                            <td colspan="8">
                                 <div class="table-empty">
                                     <span class="empty-icon">📊</span>
                                     <p>Aún no hay registros. Sube un archivo para comenzar.</p>
@@ -1040,7 +1041,7 @@
             const tbody = document.getElementById('tablaBody');
 
             if (!registros || registros.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="7">
+                tbody.innerHTML = `<tr><td colspan="8">
                     <div class="table-empty">
                         <span class="empty-icon">📊</span>
                         <p>Aún no hay registros. Sube un archivo para comenzar.</p>
@@ -1058,6 +1059,7 @@
                     <td style="font-weight:600; color: var(--text-primary);">${r.cedula}</td>
                     <td>${r.nombre_cliente || '—'}</td>
                     <td>${r.numero_credito || '—'}</td>
+                    <td>${r.celular || '—'}</td>
                     <td>
                         <span class="badge ${r.tiene_multa === 'SI' ? 'badge-danger' : 'badge-success'}">
                             ${r.tiene_multa === 'SI' ? '⚠️ Sí' : '✅ No'}
@@ -1076,7 +1078,7 @@
             `).join('');
 
             if (registros.length > limite) {
-                html += `<tr><td colspan="7" style="text-align:center; padding: 15px; color: var(--text-muted); font-weight: 600;">
+                html += `<tr><td colspan="8" style="text-align:center; padding: 15px; color: var(--text-muted); font-weight: 600;">
                     ⚠️ Mostrando ${limite} de ${registros.length} resultados. Usa el buscador de arriba o descarga el Excel para ver la lista completa.
                 </td></tr>`;
             }
@@ -1093,7 +1095,8 @@
             const filtrados = datosHistorial.filter(r =>
                 (r.cedula && r.cedula.toLowerCase().includes(query)) ||
                 (r.nombre_cliente && r.nombre_cliente.toLowerCase().includes(query)) ||
-                (r.numero_credito && r.numero_credito.toString().toLowerCase().includes(query))
+                (r.numero_credito && r.numero_credito.toString().toLowerCase().includes(query)) ||
+                (r.celular && r.celular.toString().toLowerCase().includes(query))
             );
             renderizarTabla(filtrados);
         }
