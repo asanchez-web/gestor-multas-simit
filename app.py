@@ -282,7 +282,7 @@ def estadisticas():
     df_tendencia = pd.read_sql_query(query_tendencia, conn)
     conn.close()
 
-    aumentaron = int((df_tendencia['deuda_actual'] > df_tendencia['deuda_anterior']).sum())
+    aumentaron = int(((df_tendencia['deuda_actual'] - df_tendencia['deuda_anterior']) > 150000).sum())
     bajaron = int((df_tendencia['deuda_actual'] < df_tendencia['deuda_anterior']).sum())
     
     # Monto total aumentado o disminuido
@@ -359,7 +359,7 @@ def novedades():
         
         if row['deuda_anterior'] == 0 and row['deuda_actual'] > 0:
             nuevas_multas.append(obj)
-        elif dif > 0:
+        elif dif > 150000:
             aumentos.append(obj)
         elif dif < 0:
             disminuciones.append(obj)
