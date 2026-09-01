@@ -25,6 +25,7 @@ estado_proceso = {
 POSIBLES_CEDULA = ['cedula', 'cédula', 'numero_documento', 'num_documento', 'documento', 'nro_documento', 'identificacion']
 POSIBLES_NOMBRE = ['nombre_cliente', 'nombre', 'cliente', 'nombre_completo', 'nombres']
 POSIBLES_CREDITO = ['numero_credito', 'num_credito', 'credito', 'nro_credito', 'obligacion']
+POSIBLES_CELULAR = ['celular_reciente', 'celular', 'telefono', 'tel', 'client_cel']
 
 
 def buscar_columna(columnas_df, posibles_nombres):
@@ -55,6 +56,10 @@ def init_db():
                     total_multa INTEGER,
                     fecha_consulta DATE
                 )''')
+    try:
+        c.execute("ALTER TABLE clientes ADD COLUMN celular TEXT")
+    except sqlite3.OperationalError:
+        pass  # La columna ya existe
     conn.commit()
     conn.close()
 
@@ -93,6 +98,7 @@ def upload():
     col_cedula = buscar_columna(df.columns, POSIBLES_CEDULA)
     col_nombre = buscar_columna(df.columns, POSIBLES_NOMBRE)
     col_credito = buscar_columna(df.columns, POSIBLES_CREDITO)
+    col_celular = buscar_columna(df.columns, POSIBLES_CELULAR)
 
     if not col_cedula:
         return jsonify({
@@ -104,6 +110,7 @@ def upload():
         col_cedula: 'cedula',
         **(({col_nombre: 'nombre_cliente'}) if col_nombre else {}),
         **(({col_credito: 'numero_credito'}) if col_credito else {}),
+        **(({col_celular: 'celular'}) if col_celular else {}),
     })
 
     # Asegurar que existan las columnas mínimas
@@ -111,6 +118,8 @@ def upload():
         df['nombre_cliente'] = 'Sin nombre'
     if 'numero_credito' not in df.columns:
         df['numero_credito'] = ''
+    if 'celular' not in df.columns:
+        df['celular'] = ''
 
     # Limpiar cédulas: quitar decimales, espacios, NaN
     df['cedula'] = df['cedula'].astype(str).str.strip().str.split('.').str[0]
@@ -184,7 +193,7 @@ def historial():
     """Devuelve el contenido actual de la BD como JSON para la tabla en pantalla."""
     conn = sqlite3.connect(DB_PATH)
     df_bd = pd.read_sql_query(
-        "SELECT cedula, nombre_cliente, numero_credito, tiene_multa, total_multa, ultima_consulta FROM clientes ORDER BY ultima_consulta DESC",
+        "SELECT cedula, nombre_cliente, numero_credito, celular, tiene_multa, total_multa, ultima_consulta FROM clientes ORDER BY ultima_consulta DESC",
         conn
     )
     conn.close()
@@ -211,6 +220,7 @@ def descargar():
         c.cedula,
         c.nombre_cliente,
         c.numero_credito,
+        c.celular,
         c.tiene_multa,
         c.total_multa,
         c.ultima_consulta,

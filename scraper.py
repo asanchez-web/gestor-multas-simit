@@ -30,7 +30,7 @@ def extraer_valor_multa(sb):
     Espera a que la página cargue y busca valores monetarios en formato colombiano.
     Retorna el primer valor monetario mayor a cero, o 0 si no encuentra ninguno.
     """
-    time.sleep(7)
+    time.sleep(2)
     texto = sb.get_text("body")
 
     # Buscar valores con formato colombiano: $ 1.234.567 o $1234567
@@ -45,7 +45,7 @@ def extraer_valor_multa(sb):
     return 0
 
 
-def guardar_en_bd(db_path, cedula, nombre, num_credito, total_multa):
+def guardar_en_bd(db_path, cedula, nombre, num_credito, celular, total_multa):
     """Guarda o actualiza el registro de un cliente en la base de datos."""
     tiene_multa = 'SI' if total_multa > 0 else 'NO'
     fecha = datetime.now().strftime("%Y-%m-%d")
@@ -54,9 +54,9 @@ def guardar_en_bd(db_path, cedula, nombre, num_credito, total_multa):
     c = conn.cursor()
     # Actualizar estado actual
     c.execute('''INSERT OR REPLACE INTO clientes 
-                 (cedula, nombre_cliente, numero_credito, tiene_multa, total_multa, ultima_consulta) 
-                 VALUES (?, ?, ?, ?, ?, ?)''',
-              (cedula, nombre, num_credito, tiene_multa, total_multa, fecha))
+                 (cedula, nombre_cliente, numero_credito, celular, tiene_multa, total_multa, ultima_consulta) 
+                 VALUES (?, ?, ?, ?, ?, ?, ?)''',
+              (cedula, nombre, num_credito, celular, tiene_multa, total_multa, fecha))
     
     # Guardar en historial mes a mes
     c.execute('''INSERT INTO historial_consultas 
@@ -96,9 +96,9 @@ def consultar_cedula(sb, cedula):
     """Escribe la cédula en el buscador y hace click en buscar."""
     sb.clear("#txtBusqueda")
     sb.type("#txtBusqueda", cedula)
-    time.sleep(2)
+    time.sleep(1)
     sb.click("#btnNumDocPlaca")
-    time.sleep(PAUSA_REFRESCO)
+    time.sleep(4)
 
 
 def manejar_doble_documento(sb, cedula):
@@ -186,6 +186,7 @@ def ejecutar_scraper(pendientes, estado, db_path):
                 cedula = str(cliente['cedula']).strip().split('.')[0]
                 nombre = cliente.get('nombre_cliente', 'Sin nombre')
                 num_credito = str(cliente.get('numero_credito', ''))
+                celular = str(cliente.get('celular', ''))
 
                 estado["mensaje"] = f"🔍 Consultando: {nombre} ({cedula}) — {i + 1}/{len(pendientes)}"
                 total_multa = 0
@@ -222,7 +223,7 @@ def ejecutar_scraper(pendientes, estado, db_path):
 
                 # GUARDAR EN BD SOLO SI NO HUBO ERROR
                 if not hubo_error:
-                    guardar_en_bd(db_path, cedula, nombre, num_credito, total_multa)
+                    guardar_en_bd(db_path, cedula, nombre, num_credito, celular, total_multa)
 
                 estado["procesados"] += 1
 
