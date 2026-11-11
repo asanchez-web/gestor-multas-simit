@@ -25,7 +25,55 @@ estado_proceso = {
 POSIBLES_CEDULA = ['cedula', 'cédula', 'numero_documento', 'num_documento', 'documento', 'nro_documento', 'identificacion']
 POSIBLES_NOMBRE = ['nombre_cliente', 'nombre', 'cliente', 'nombre_completo', 'nombres']
 POSIBLES_CREDITO = ['numero_credito', 'num_credito', 'credito', 'nro_credito', 'obligacion']
-POSIBLES_CELULAR = ['celular_reciente', 'celular', 'telefono', 'tel', 'client_cel']
+POSIBLES_CELULAR = ['celular_reciente', 'celular', 'telefono', 'tel', 'client_cel',
+                    'numero_celular', 'movil', 'telefono_celular', 'cel']
+
+# ─── Reglas de reconsulta por MES CALENDARIO ────────────────────────────────
+# Ya no se cuentan días: si la última consulta fue en un mes anterior al de la
+# carga actual, se vuelve a consultar. Ej: consultado el 20-oct → en cualquier
+# carga de noviembre (1-nov, 5-nov...) se reconsulta.
+MESES_CON_MULTA = 1   # Con multa: se reconsulta cada mes
+MESES_SIN_MULTA = 1   # Sin multa: pon 2 si quieres reconsultarlos cada 2 meses
+
+# ─── Formato de carga masiva: plantilla CGEN-CargaGenerica ──────────────────
+# Mismo orden y nombres de columnas que CARGA_MULTAS (hoja CGEN-CargaGenerica).
+# Los valores fijos se pueden ajustar aquí si cambia la tipificación.
+COLUMNAS_CGEN = ['Resultado de Gestion', 'Usuario', 'Fecha', 'Tipo gestionable',
+                 'Numero de Gestionable', 'Gestion', 'Tipo Contacto', 'Gestion Con',
+                 'Punto de Atencion', 'Forma Contacto', 'Informacion de contacto',
+                 'Indicativo', 'tipo', 'Ciudad', 'Barrio', 'Nombre Contacto',
+                 'Relacion con el Credito', 'Relacion con el Cliente', 'Estado', 'Observacion']
+VALORES_FIJOS_CGEN = {
+    'Resultado de Gestion': 'CSIM',
+    'Usuario': 'asesorcartera',
+    'Tipo gestionable': 'Obl-Credito',
+    'Gestion': '1-COBRANZAS ',   # con espacio final, igual que la plantilla original
+    'Tipo Contacto': 'WEB-web',
+    'Gestion Con': 'CLIE-Cliente',
+    'Forma Contacto': 'cel-celular',
+    'tipo': 'PER-Personal',
+    'Estado': 'ACT',
+}
+
+
+def limpiar_celular(valor):
+    """Deja el celular solo con dígitos: quita '.0', espacios, +57, NaN."""
+    if valor is None:
+        return ''
+    texto = str(valor).strip()
+    if texto.lower() in ('nan', 'none', ''):
+        return ''
+    if texto.endswith('.0'):
+        texto = texto[:-2]
+    digitos = ''.join(ch for ch in texto if ch.isdigit())
+    if len(digitos) == 12 and digitos.startswith('57'):
+        digitos = digitos[2:]
+    return digitos
+
+
+def meses_entre(fecha, hoy):
+    """Diferencia en meses calendario (oct→nov = 1, sin importar el día)."""
+    return (hoy.year - fecha.year) * 12 + (hoy.month - fecha.month)
 
 
 def buscar_columna(columnas_df, posibles_nombres):
@@ -125,6 +173,11 @@ def upload():
     df['cedula'] = df['cedula'].astype(str).str.strip().str.split('.').str[0]
     df = df[df['cedula'].str.isnumeric()].copy()  # Solo cédulas numéricas válidas
     df = df.drop_duplicates(subset='cedula')
+    df['celular'] = df['celular'].apply(limpiar_celular)
+    df['numero_credito'] = (df['numero_credito'].astype(str).str.strip()
+                            .str.replace(r'\.0$', '', regex=True)
+                            .replace({'nan': '', 'None': ''}))
+    df['nombre_cliente'] = df['nombre_cliente'].fillna('Sin nombre').astype(str).str.strip()
 
     if df.empty:
         return jsonify({"error": "El archivo no tiene cédulas válidas."}), 400
@@ -149,23 +202,35 @@ def upload():
             tiene_multa, ultima_consulta_str = res
             try:
                 ultima_consulta = datetime.strptime(ultima_consulta_str, "%Y-%m-%d").date()
-                dias = (hoy - ultima_consulta).days
+                meses = meses_entre(ultima_consulta, hoy)
             except (ValueError, TypeError):
-                dias = 999  # Si la fecha está corrupta, reconsultar
+                meses = 999  # Si la fecha está corrupta, reconsultar
 
-            # REGLAS:
-            #   - Con multa → reconsultar cada 30 días (1 mes)
-            #   - Sin multa → reconsultar cada 60 días (2 meses)
-            if tiene_multa == 'SI' and dias >= 30:
+            # REGLAS (mes calendario, no días):
+            #   - Con multa → si no se consultó en el mes actual
+            #   - Sin multa → según MESES_SIN_MULTA
+            if tiene_multa == 'SI' and meses >= MESES_CON_MULTA:
                 pendientes.append(row.to_dict())
-            elif tiene_multa == 'NO' and dias >= 60:
+            elif tiene_multa != 'SI' and meses >= MESES_SIN_MULTA:
                 pendientes.append(row.to_dict())
+            else:
+                # Ya consultado este mes: igual actualizamos celular/nombre/crédito
+                # con lo que trae la base nueva, para que el reporte salga al día.
+                c.execute('''UPDATE clientes SET
+                                celular = CASE WHEN ? != '' THEN ? ELSE celular END,
+                                nombre_cliente = CASE WHEN ? != '' THEN ? ELSE nombre_cliente END,
+                                numero_credito = CASE WHEN ? != '' THEN ? ELSE numero_credito END
+                             WHERE cedula = ?''',
+                          (row['celular'], row['celular'],
+                           row['nombre_cliente'], row['nombre_cliente'],
+                           row['numero_credito'], row['numero_credito'], cedula))
 
+    conn.commit()
     conn.close()
 
     if not pendientes:
         return jsonify({
-            "mensaje": "✅ Todos los clientes están al día en la base de datos. No hay nada nuevo que consultar."
+            "mensaje": "✅ Todos los clientes de esta base ya fueron consultados este mes. No hay nada nuevo que consultar."
         })
 
     # ── Lanzar scraper en segundo plano ──────────────────────────────────
@@ -250,6 +315,70 @@ def descargar():
         as_attachment=True,
         download_name=f"{prefijo}_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx"
     )
+
+
+def escribir_xls(df, ruta, hoja):
+    """Escribe un .xls (Excel 97-2003) con todo como texto, igual que la plantilla."""
+    import xlwt
+    wb = xlwt.Workbook(encoding='utf-8')
+    ws = wb.add_sheet(hoja)
+    for j, col in enumerate(df.columns):
+        ws.write(0, j, col)
+    for i, fila in enumerate(df.itertuples(index=False), start=1):
+        for j, valor in enumerate(fila):
+            if valor is not None and str(valor) not in ('', 'nan'):
+                ws.write(i, j, str(valor))
+    wb.save(ruta)
+
+
+@app.route('/descargar/carga_masiva')
+def descargar_carga_masiva():
+    """Archivo .xls en formato CGEN-CargaGenerica con los clientes CON multa
+    consultados en el mes actual (o ?periodo=YYYY-MM).
+    Con ?revision=1 descarga los que quedaron por fuera (sin celular válido o
+    sin número de crédito) para revisarlos aparte."""
+    periodo = request.args.get('periodo') or datetime.now().strftime('%Y-%m')
+    revision = request.args.get('revision') == '1'
+    conn = sqlite3.connect(DB_PATH)
+    df = pd.read_sql_query(
+        """SELECT cedula, nombre_cliente, celular, numero_credito, total_multa, ultima_consulta
+           FROM clientes
+           WHERE tiene_multa = 'SI' AND substr(ultima_consulta, 1, 7) = ?
+           ORDER BY ultima_consulta, total_multa DESC""",
+        conn, params=(periodo,)
+    )
+    conn.close()
+
+    if df.empty:
+        return jsonify({"error": f"No hay clientes con multa consultados en {periodo}."}), 400
+
+    df['celular'] = df['celular'].apply(limpiar_celular)
+    df['numero_credito'] = (df['numero_credito'].fillna('').astype(str).str.strip()
+                            .str.replace(r'\.0$', '', regex=True))
+    valido = (df['celular'].str.len() == 10) & (df['numero_credito'] != '')
+
+    if revision:
+        out = df[~valido][['cedula', 'nombre_cliente', 'numero_credito', 'celular',
+                           'total_multa', 'ultima_consulta']]
+        if out.empty:
+            return jsonify({"mensaje": "Todos los multados del mes tienen celular y crédito. Nada que revisar."})
+        ruta = f"data/Revision_Carga_Multas_{periodo}.xlsx"
+        out.to_excel(ruta, index=False)
+        return send_file(ruta, as_attachment=True, download_name=f"Revision_Carga_Multas_{periodo}.xlsx")
+
+    ok = df[valido]
+    cgen = pd.DataFrame('', index=ok.index, columns=COLUMNAS_CGEN)
+    for col, val in VALORES_FIJOS_CGEN.items():
+        cgen[col] = val
+    cgen['Fecha'] = ok['ultima_consulta']
+    cgen['Numero de Gestionable'] = ok['numero_credito']
+    cgen['Informacion de contacto'] = ok['celular']
+    cgen['Observacion'] = ok['total_multa'].astype(int).astype(str)
+
+    nombre = f"CARGA_MULTAS_{datetime.now().strftime('%d_%m_%Y')}.xls"
+    ruta = f"data/{nombre}"
+    escribir_xls(cgen, ruta, 'CGEN-CargaGenerica')
+    return send_file(ruta, as_attachment=True, download_name=nombre)
 
 
 @app.route('/estadisticas')
