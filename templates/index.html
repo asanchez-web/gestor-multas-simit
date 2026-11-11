@@ -765,6 +765,12 @@
                 <a href="/descargar?filtro=con_multa" class="btn btn-outline" style="border-color: var(--accent-rose); color: var(--accent-rose);" id="btnDescargarMultas">
                     ⚠️ Descargar Solo Multados
                 </a>
+                <a href="/descargar/carga_masiva" class="btn btn-primary" id="btnCargaMasiva">
+                    📤 Carga Masiva CGEN (mes actual)
+                </a>
+                <a href="/descargar/carga_masiva?revision=1" class="btn btn-outline" id="btnRevisionCarga">
+                    🔎 Multados sin celular/crédito
+                </a>
                 <button class="btn btn-outline" onclick="cargarHistorial()">
                     🔄 Actualizar Tabla
                 </button>
@@ -845,11 +851,11 @@
                 </div>
                 <div style="padding: 1rem; background: rgba(244, 63, 94, 0.05); border: 1px solid rgba(244, 63, 94, 0.1); border-radius: var(--radius-sm);">
                     <div style="font-weight: 600; color: var(--accent-rose); margin-bottom: 0.25rem;">⚠️ Con Multa</div>
-                    <div style="font-size: 0.85rem; color: var(--text-secondary);">Se reconsultan cada <strong>1 mes</strong> (30 días).</div>
+                    <div style="font-size: 0.85rem; color: var(--text-secondary);">Se reconsultan en la carga de cada <strong>mes calendario</strong> (consultado en octubre → se reconsulta en cualquier carga de noviembre).</div>
                 </div>
                 <div style="padding: 1rem; background: rgba(16, 185, 129, 0.05); border: 1px solid rgba(16, 185, 129, 0.1); border-radius: var(--radius-sm);">
                     <div style="font-weight: 600; color: var(--accent-emerald); margin-bottom: 0.25rem;">✅ Sin Multa</div>
-                    <div style="font-size: 0.85rem; color: var(--text-secondary);">Se reconsultan cada <strong>2 meses</strong> (60 días).</div>
+                    <div style="font-size: 0.85rem; color: var(--text-secondary);">Se reconsultan en la carga de cada <strong>mes calendario</strong>.</div>
                 </div>
             </div>
         </div>
