@@ -1,0 +1,28 @@
+name: Prueba acceso SIMIT
+on:
+  push:
+    branches: [ "prueba-simit" ]
+jobs:
+  prueba:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - run: pip install -q seleniumbase
+      - name: Abrir SIMIT (no consulta ninguna cedula)
+        run: |
+          python - <<'PY'
+          import time
+          from seleniumbase import SB
+          with SB(uc=True, headless=True, incognito=True) as sb:
+              sb.uc_open_with_reconnect("https://www.fcm.org.co/simit/#/estado-cuenta", 4)
+              time.sleep(10)
+              print("TITULO:", sb.get_title())
+              try:
+                  sb.wait_for_element_visible("#txtBusqueda", timeout=20)
+                  print("RESULTADO: BUSCADOR VISIBLE - SIMIT ACCESIBLE")
+              except Exception as e:
+                  print("RESULTADO: BUSCADOR NO VISIBLE:", type(e).__name__)
+                  print(sb.get_text("body")[:500])
+          PY
