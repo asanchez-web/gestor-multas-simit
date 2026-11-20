@@ -2,8 +2,8 @@ name: Robot multas SIMIT
 
 on:
   schedule:
-    # Cada 6 horas (hora UTC). Cada corrida consulta pendientes del mes
-    # hasta ~5h20 y la siguiente continúa. Cuando no hay pendientes, termina en 1-2 min.
+    # Cada 6 horas (hora UTC = 1:17, 7:17, 13:17 y 19:17 en Colombia).
+    # 4 robots en paralelo consultan pendientes ~5h20; luego se consolida el Sheet.
     - cron: "17 */6 * * *"
   workflow_dispatch:   # botón "Run workflow" para correrlo a mano
 
@@ -15,27 +15,53 @@ permissions:
   contents: read
   actions: write   # para mantener activo el horario (GitHub lo apaga tras 60 días sin actividad)
 
+env:
+  TOTAL_ROBOTS: "4"   # cuántos robots en paralelo (si cambias este número, cambia también la lista de abajo)
+
 jobs:
   consultar:
+    name: Robot ${{ matrix.robot }}
     runs-on: ubuntu-latest
     timeout-minutes: 350
+    strategy:
+      fail-fast: false
+      matrix:
+        robot: [0, 1, 2, 3]
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-
       - name: Instalar dependencias
         run: pip install -q -r robot/requirements.txt
-
-      - name: Consultar SIMIT y actualizar el Google Sheet
+      - name: Consultar SIMIT (su parte de la base)
         env:
           GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
           SHEET_ID: ${{ secrets.SHEET_ID }}
+          MODO: consultar
+          ROBOT: ${{ matrix.robot }}
           LIMITE_MINUTOS: "320"
         run: python robot/robot_multas.py
 
+  consolidar:
+    name: Armar Clientes, Carga_CGEN y Estado
+    needs: consultar
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Instalar dependencias
+        run: pip install -q gspread google-auth
+      - name: Consolidar el Google Sheet
+        env:
+          GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
+          SHEET_ID: ${{ secrets.SHEET_ID }}
+          MODO: consolidar
+        run: python robot/robot_multas.py
       - name: Mantener activo el horario
         if: always()
         env:

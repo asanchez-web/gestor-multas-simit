@@ -35,6 +35,14 @@ MAX_ERRORES_SEGUIDOS = 15     # si el SIMIT falla tanto seguido, se para y sigue
 CLIENTES_ANTES_DE_REFRESCO = 20
 PAUSA_ENTRE_CONSULTAS = 3
 
+# Paralelo: varios robots, cada uno con una parte de las cédulas (cedula % TOTAL_ROBOTS).
+# MODO: "todo" (un solo robot hace todo), "consultar" (solo consulta y agrega al Historial),
+#       "consolidar" (no consulta; arma Clientes, Carga_CGEN, Revision y Estado).
+MODO = os.environ.get("MODO", "todo")
+ROBOT = int(os.environ.get("ROBOT", "0"))
+TOTAL_ROBOTS = int(os.environ.get("TOTAL_ROBOTS", "1"))
+FILAS_POR_ESCRITURA = 5000
+
 # Reconsulta por MES CALENDARIO (no por día):
 MESES_CON_MULTA = 1   # con multa: cada mes
 MESES_SIN_MULTA = 2   # sin multa: cada 2 meses (consultado en nov → se reconsulta en enero)
@@ -139,7 +147,9 @@ def escribir_tabla(ws, encabezados, filas):
         ws.resize(rows=len(datos) + 10)
     if ws.col_count < len(encabezados):
         ws.resize(cols=len(encabezados))
-    ws.update(values=datos, range_name="A1", value_input_option="RAW")
+    for i in range(0, len(datos), FILAS_POR_ESCRITURA):   # por partes (bases grandes)
+        ws.update(values=datos[i:i + FILAS_POR_ESCRITURA], range_name=f"A{i + 1}",
+                  value_input_option="RAW")
 
 
 def leer_base(ws):
@@ -269,8 +279,16 @@ def main():
 
     print(f"Base: {len(base)} clientes | pendientes este mes: {len(pendientes)}")
 
+    if MODO == "consolidar":
+        a_consultar = []
+    elif TOTAL_ROBOTS > 1:
+        a_consultar = [c for c in pendientes if int(c) % TOTAL_ROBOTS == ROBOT]
+        print(f"Robot {ROBOT + 1} de {TOTAL_ROBOTS}: le tocan {len(a_consultar)} pendientes")
+    else:
+        a_consultar = pendientes
+
     consultados = errores = 0
-    if pendientes:
+    if a_consultar:
         import scraper as S
         from seleniumbase import SB
 
@@ -282,7 +300,7 @@ def main():
             if buffer_hist:
                 ws_hist.append_rows(buffer_hist, value_input_option="RAW")
                 buffer_hist = []
-            if final or consultados % (LOTE_GUARDADO * 4) == 0:
+            if MODO == "todo" and (final or consultados % (LOTE_GUARDADO * 40) == 0):
                 escribir_tabla(ws_cli, COLS_CLIENTES, filas_clientes(clientes))
 
         with SB(uc=True, headless=True, incognito=True,
@@ -291,7 +309,7 @@ def main():
             sb.uc_open_with_reconnect(S.URL_SIMIT, 4)
             time.sleep(S.PAUSA_REFRESCO)
 
-            for i, ced in enumerate(pendientes, start=1):
+            for i, ced in enumerate(a_consultar, start=1):
                 if (time.time() - inicio) / 60 > LIMITE_MINUTOS:
                     print("Tiempo de esta corrida agotado; la próxima sigue con los pendientes.")
                     break
@@ -326,6 +344,10 @@ def main():
 
         guardar(final=True)
 
+    if MODO == "consultar":
+        print(f"Fin robot {ROBOT + 1}: {consultados} consultados, {errores} errores")
+        return
+
     # Reportes del mes
     cgen, revision = armar_cgen(clientes, mes)
     escribir_tabla(ws_cgen, COLUMNAS_CGEN, cgen)
@@ -337,8 +359,10 @@ def main():
     hechos_mes = sum(1 for c in en_base if clientes[c].get("ultima_consulta", "").startswith(mes))
     multados_mes = sum(1 for c in en_base if clientes[c].get("ultima_consulta", "").startswith(mes)
                        and clientes[c].get("tiene_multa") == "SI")
-    if not pendientes:
+    if MODO == "consolidar" or not a_consultar:
         escribir_tabla(ws_cli, COLS_CLIENTES, filas_clientes(clientes))
+    hoy_txt = hoy.strftime("%Y-%m-%d")
+    consultados_hoy = sum(1 for c in clientes.values() if c.get("ultima_consulta") == hoy_txt)
     escribir_tabla(ws_est, ["dato", "valor"], [
         ["ultima_corrida", ahora().strftime("%Y-%m-%d %H:%M")],
         ["mes", mes],
@@ -348,8 +372,8 @@ def main():
         ["con_multa_este_mes", multados_mes],
         ["filas_carga_cgen", len(cgen)],
         ["multados_sin_celular_o_credito", len(revision)],
-        ["consultados_en_esta_corrida", consultados],
-        ["errores_en_esta_corrida", errores],
+        ["consultados_hoy", consultados_hoy],
+        ["robots_en_paralelo", TOTAL_ROBOTS],
     ])
     print(f"Fin: {consultados} consultados, {errores} errores, pendientes {faltan}, "
           f"CGEN {len(cgen)} filas")
