@@ -10,7 +10,7 @@ Pestañas del Sheet:
   Revision    → multados del mes sin celular válido o sin número de crédito.
   Estado      → resumen de la última corrida.
 
-Regla: cada cliente de la Base se consulta UNA vez por mes calendario.
+Regla (por mes calendario): con multa → cada mes; sin multa → cada 2 meses.
 Cada corrida consulta pendientes hasta que se acaba el tiempo; la siguiente sigue.
 
 IMPORTANTE: el repositorio es público → los logs NO deben mostrar cédulas,
@@ -34,6 +34,10 @@ LOTE_GUARDADO = 25            # cada cuántas consultas se escribe en el Sheet
 MAX_ERRORES_SEGUIDOS = 15     # si el SIMIT falla tanto seguido, se para y sigue la próxima corrida
 CLIENTES_ANTES_DE_REFRESCO = 20
 PAUSA_ENTRE_CONSULTAS = 3
+
+# Reconsulta por MES CALENDARIO (no por día):
+MESES_CON_MULTA = 1   # con multa: cada mes
+MESES_SIN_MULTA = 2   # sin multa: cada 2 meses (consultado en nov → se reconsulta en enero)
 
 POSIBLES = {
     "cedula": ["cedula", "cédula", "numero_documento", "num_documento", "documento",
@@ -90,6 +94,24 @@ def limpiar_celular(valor):
 def a_entero(valor):
     d = solo_digitos(valor)
     return int(d) if d else 0
+
+
+def meses_desde(fecha_txt, hoy):
+    """Meses calendario entre la fecha (YYYY-MM-DD) y hoy. Sin fecha → muy grande."""
+    try:
+        anio, mes = int(fecha_txt[:4]), int(fecha_txt[5:7])
+    except (ValueError, TypeError):
+        return 999
+    return (hoy.year - anio) * 12 + (hoy.month - mes)
+
+
+def toca_consultar(cliente, hoy):
+    meses = meses_desde(cliente.get("ultima_consulta", ""), hoy)
+    if cliente.get("tiene_multa") == "SI":
+        return meses >= MESES_CON_MULTA
+    if cliente.get("tiene_multa") == "NO":
+        return meses >= MESES_SIN_MULTA
+    return meses >= 1   # nunca consultado o sin dato
 
 
 # ─── Google Sheet ───────────────────────────────────────────────────────────
@@ -242,7 +264,7 @@ def main():
         for campo in ("nombre_cliente", "numero_credito", "celular"):
             if b[campo]:
                 c[campo] = b[campo]
-        if not c.get("ultima_consulta", "").startswith(mes):
+        if toca_consultar(c, hoy):
             pendientes.append(b["cedula"])
 
     print(f"Base: {len(base)} clientes | pendientes este mes: {len(pendientes)}")
@@ -311,6 +333,7 @@ def main():
                             "total_multa", "ultima_consulta"], revision)
 
     en_base = {b["cedula"] for b in base}
+    faltan = sum(1 for c in en_base if toca_consultar(clientes[c], hoy))
     hechos_mes = sum(1 for c in en_base if clientes[c].get("ultima_consulta", "").startswith(mes))
     multados_mes = sum(1 for c in en_base if clientes[c].get("ultima_consulta", "").startswith(mes)
                        and clientes[c].get("tiene_multa") == "SI")
@@ -321,14 +344,14 @@ def main():
         ["mes", mes],
         ["clientes_en_base", len(base)],
         ["consultados_este_mes", hechos_mes],
-        ["pendientes", len(base) - hechos_mes],
+        ["pendientes", faltan],
         ["con_multa_este_mes", multados_mes],
         ["filas_carga_cgen", len(cgen)],
         ["multados_sin_celular_o_credito", len(revision)],
         ["consultados_en_esta_corrida", consultados],
         ["errores_en_esta_corrida", errores],
     ])
-    print(f"Fin: {consultados} consultados, {errores} errores, pendientes {len(base) - hechos_mes}, "
+    print(f"Fin: {consultados} consultados, {errores} errores, pendientes {faltan}, "
           f"CGEN {len(cgen)} filas")
 
 
