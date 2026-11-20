@@ -72,7 +72,7 @@ El sistema busca estas columnas automáticamente (no importan mayúsculas):
 Corre solo cada 6 horas en los servidores gratis de GitHub, sin servidor propio.
 
 1. Pega la base del mes en la pestaña **Base** del Google Sheet (`cedula`, `numero_credito`, `nombre_cliente`, `celular`).
-2. El robot consulta cada cliente **una vez por mes calendario** y avanza por tandas hasta terminar.
+2. Por **mes calendario**: con multa se reconsulta cada mes, sin multa cada 2 meses. Avanza por tandas hasta terminar.
 3. Resultados en el Sheet: **Clientes**, **Historial**, **Carga_CGEN** (formato de carga masiva), **Revision** y **Estado**.
 
 Configuración (una sola vez), en *Settings → Secrets and variables → Actions*:
