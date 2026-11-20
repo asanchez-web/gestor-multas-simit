@@ -1,14 +1,16 @@
-version: '3.8'
 services:
   web-multas:
     build: .
+    image: gestor-multas-simit:local
     container_name: gestor-multas-simit
     ports:
       - "5000:5000"
     restart: always
+    shm_size: "1gb"          # memoria compartida para Chromium (evita que se cierre)
     volumes:
       - base_de_datos_multas:/app/data
     environment:
       - PYTHONUNBUFFERED=1
+      - TZ=America/Bogota
 volumes:
   base_de_datos_multas:

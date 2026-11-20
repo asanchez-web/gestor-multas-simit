@@ -1,3 +1,4 @@
+import os
 import time
 import re
 import sqlite3
@@ -178,7 +179,9 @@ def ejecutar_scraper(pendientes, estado, db_path):
 
     try:
         # no_sandbox=True es VITAL para que Chrome funcione dentro de Docker
-        with SB(uc=True, headless=True, incognito=True, chromium_arg="--no-sandbox") as sb:
+        with SB(uc=True, headless=True, incognito=True,
+                binary_location=os.environ.get("CHROME_BIN") or None,
+                chromium_arg="--no-sandbox,--disable-dev-shm-usage") as sb:
             sb.uc_open_with_reconnect(URL_SIMIT, 4)
             time.sleep(PAUSA_REFRESCO)
 
