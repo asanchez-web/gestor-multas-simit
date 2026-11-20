@@ -140,7 +140,7 @@ def manejar_doble_documento(sb, cedula):
         sb.wait_for_element_visible("#txtBusqueda", timeout=TIMEOUT_ELEMENTO)
 
     except Exception as e:
-        print(f"[DOBLE DOC] Error procesando doble documento para {cedula}: {e}")
+        print(f"[DOBLE DOC] Error procesando doble documento: {type(e).__name__}")  # sin datos del cliente (logs públicos)
         try:
             sb.refresh_page()
             time.sleep(5)

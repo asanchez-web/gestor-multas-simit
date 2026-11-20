@@ -66,3 +66,18 @@ El sistema busca estas columnas automáticamente (no importan mayúsculas):
 - El scraper hace una pausa de refresco cada 20 consultas para evitar bloqueos del SIMIT.
 - Los datos se guardan en SQLite inmediatamente después de cada consulta (resistente a caídas).
 - La variable `PYTHONUNBUFFERED=1` en docker-compose asegura que los logs aparezcan en tiempo real en Portainer.
+
+## 🤖 Robot automático (GitHub Actions + Google Sheet)
+
+Corre solo cada 6 horas en los servidores gratis de GitHub, sin servidor propio.
+
+1. Pega la base del mes en la pestaña **Base** del Google Sheet (`cedula`, `numero_credito`, `nombre_cliente`, `celular`).
+2. El robot consulta cada cliente **una vez por mes calendario** y avanza por tandas hasta terminar.
+3. Resultados en el Sheet: **Clientes**, **Historial**, **Carga_CGEN** (formato de carga masiva), **Revision** y **Estado**.
+
+Configuración (una sola vez), en *Settings → Secrets and variables → Actions*:
+- `GOOGLE_CREDENTIALS`: el JSON completo de la cuenta de servicio.
+- `SHEET_ID`: el ID del Google Sheet (lo que va entre `/d/` y `/edit` en el link).
+
+El Sheet debe estar compartido como **Editor** con el correo de la cuenta de servicio.
+Para correrlo a mano: pestaña **Actions** → *Robot multas SIMIT* → **Run workflow**.
