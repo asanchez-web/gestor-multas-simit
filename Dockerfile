@@ -1,20 +1,25 @@
-FROM python:3.10-slim
-# Instalar dependencias del sistema y Google Chrome
+# Funciona en servidores Intel/AMD y ARM (Oracle Cloud Ampere).
+# Usa Chromium de Debian, que existe para ambas arquitecturas.
+FROM python:3.10-slim-bookworm
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    wget gnupg2 unzip xvfb curl ca-certificates \
-    && wget -q https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb \
-    && apt-get install -y --no-install-recommends ./google-chrome-stable_current_amd64.deb \
-    && rm google-chrome-stable_current_amd64.deb \
+        chromium chromium-driver fonts-liberation ca-certificates tzdata \
     && rm -rf /var/lib/apt/lists/*
+
+ENV TZ=America/Bogota \
+    PYTHONUNBUFFERED=1 \
+    CHROME_BIN=/usr/bin/chromium
+
 WORKDIR /app
-# Copiar e instalar dependencias Python
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-# Copiar el resto del código fuente
+# SeleniumBase usa el chromedriver del sistema (no descarga nada al arrancar)
+RUN pip install --no-cache-dir -r requirements.txt \
+    && SB_DRIVERS=$(python -c "import seleniumbase,os;print(os.path.join(os.path.dirname(seleniumbase.__file__),'drivers'))") \
+    && cp /usr/bin/chromedriver "$SB_DRIVERS/chromedriver" \
+    && cp /usr/bin/chromedriver "$SB_DRIVERS/uc_driver" \
+    && chmod +x "$SB_DRIVERS/chromedriver" "$SB_DRIVERS/uc_driver"
+
 COPY . .
-# Crear carpeta de datos persistente
 RUN mkdir -p /app/data
-# Exponer el puerto de la web
 EXPOSE 5000
-# Arrancar el servidor Flask
 CMD ["python", "app.py"]
