@@ -4,7 +4,7 @@ on:
   schedule:
     # Cada 6 horas (hora UTC = 1:17, 7:17, 13:17 y 19:17 en Colombia).
     # 4 robots en paralelo consultan pendientes ~5h20; luego se consolida el Sheet.
-    - cron: "17 */6 * * *"
+    - cron: "17 * * * *"   # cada hora; si ya hay una corriendo, espera en fila (así no quedan huecos)
   workflow_dispatch:   # botón "Run workflow" para correrlo a mano
 
 concurrency:
@@ -39,6 +39,7 @@ jobs:
           GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
           SHEET_ID: ${{ secrets.SHEET_ID }}
           MODO: consultar
+          PYTHONUNBUFFERED: "1"   # ver el avance en vivo en GitHub
           ROBOT: ${{ matrix.robot }}
           LIMITE_MINUTOS: "320"
         run: python robot/robot_multas.py
