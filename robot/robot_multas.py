@@ -34,6 +34,7 @@ LOTE_GUARDADO = 25            # cada cuántas consultas se escribe en el Sheet
 MAX_ERRORES_SEGUIDOS = 15     # si el SIMIT falla tanto seguido, se para y sigue la próxima corrida
 CLIENTES_ANTES_DE_REFRESCO = 20
 PAUSA_ENTRE_CONSULTAS = 3
+PAUSA_APERTURA = 8        # segundos tras abrir SIMIT en un navegador nuevo
 
 # Paralelo: varios robots, cada uno con una parte de las cédulas (cedula % TOTAL_ROBOTS).
 # MODO: "todo" (un solo robot hace todo), "consultar" (solo consulta y agrega al Historial),
@@ -303,44 +304,69 @@ def main():
             if MODO == "todo" and (final or consultados % (LOTE_GUARDADO * 40) == 0):
                 escribir_tabla(ws_cli, COLS_CLIENTES, filas_clientes(clientes))
 
-        with SB(uc=True, headless=True, incognito=True,
-                binary_location=os.environ.get("CHROME_BIN") or None,
-                chromium_arg="--no-sandbox,--disable-dev-shm-usage") as sb:
-            sb.uc_open_with_reconnect(S.URL_SIMIT, 4)
-            time.sleep(S.PAUSA_REFRESCO)
+        def navegador_caido(e):
+            texto = f"{type(e).__name__} {e}"
+            return any(x in texto for x in ("MaxRetryError", "NewConnectionError", "Connection refused",
+                                            "InvalidSessionId", "no such window", "disconnected",
+                                            "chrome not reachable"))
 
-            for i, ced in enumerate(a_consultar, start=1):
-                if (time.time() - inicio) / 60 > LIMITE_MINUTOS:
-                    print("Tiempo de esta corrida agotado; la próxima sigue con los pendientes.")
-                    break
-                try:
-                    total = consultar_una(sb, S, ced)
-                    fecha = ahora().strftime("%Y-%m-%d")
-                    tiene = "SI" if total > 0 else "NO"
-                    c = clientes[ced]
-                    c.update(tiene_multa=tiene, total_multa=str(total), ultima_consulta=fecha)
-                    buffer_hist.append([ced, tiene, total, fecha])
-                    consultados += 1
-                    errores_seguidos = 0
-                    if consultados % LOTE_GUARDADO == 0:
-                        guardar()
-                        print(f"  avance: {consultados} consultados, {errores} errores")
-                except Exception as e:
-                    errores += 1
-                    errores_seguidos += 1
-                    print(f"  error #{errores}: {type(e).__name__}")
-                    try:
-                        sb.refresh_page()
-                        time.sleep(5)
-                    except Exception:
-                        pass
-                    if errores_seguidos >= MAX_ERRORES_SEGUIDOS:
-                        print("Demasiados errores seguidos (posible bloqueo del SIMIT). Se para esta corrida.")
-                        break
-
-                if i % CLIENTES_ANTES_DE_REFRESCO == 0:
-                    S.refrescar_sesion(sb, {"mensaje": ""})
-                time.sleep(PAUSA_ENTRE_CONSULTAS)
+        # Un Chrome NUEVO cada CLIENTES_ANTES_DE_REFRESCO clientes (en vez de "refrescar",
+        # que tumbaba el navegador). Si el navegador se cae, se abre otro.
+        pos = 0
+        parar = False
+        while pos < len(a_consultar) and not parar:
+            inicio_lote = pos
+            lote = a_consultar[pos:pos + CLIENTES_ANTES_DE_REFRESCO]
+            pos += len(lote)
+            try:
+                with SB(uc=True, headless=True, incognito=True,
+                        binary_location=os.environ.get("CHROME_BIN") or None,
+                        chromium_arg="--no-sandbox,--disable-dev-shm-usage") as sb:
+                    sb.uc_open_with_reconnect(S.URL_SIMIT, 4)
+                    time.sleep(PAUSA_APERTURA)
+                    for j, ced in enumerate(lote):
+                        if (time.time() - inicio) / 60 > LIMITE_MINUTOS:
+                            print("Tiempo de esta corrida agotado; la próxima sigue con los pendientes.")
+                            parar = True
+                            break
+                        try:
+                            total = consultar_una(sb, S, ced)
+                            fecha = ahora().strftime("%Y-%m-%d")
+                            tiene = "SI" if total > 0 else "NO"
+                            clientes[ced].update(tiene_multa=tiene, total_multa=str(total),
+                                                 ultima_consulta=fecha)
+                            buffer_hist.append([ced, tiene, total, fecha])
+                            consultados += 1
+                            errores_seguidos = 0
+                            if consultados % LOTE_GUARDADO == 0:
+                                guardar()
+                                print(f"  avance: {consultados} consultados, {errores} errores")
+                        except Exception as e:
+                            errores += 1
+                            errores_seguidos += 1
+                            print(f"  error #{errores}: {type(e).__name__}")
+                            if errores_seguidos >= MAX_ERRORES_SEGUIDOS:
+                                print("Demasiados errores seguidos (posible bloqueo del SIMIT). Se para esta corrida.")
+                                parar = True
+                                break
+                            if navegador_caido(e):
+                                print("  navegador caído: se abre uno nuevo")
+                                pos = inicio_lote + j + 1   # los que faltaban del lote se reintentan
+                                break
+                            try:
+                                sb.refresh_page()
+                                time.sleep(3)
+                            except Exception:
+                                break
+                        time.sleep(PAUSA_ENTRE_CONSULTAS)
+            except Exception as e:
+                errores += 1
+                errores_seguidos += 1
+                print(f"  error abriendo navegador #{errores}: {type(e).__name__}")
+                if errores_seguidos >= MAX_ERRORES_SEGUIDOS:
+                    print("Demasiados errores seguidos. Se para esta corrida.")
+                    parar = True
+                time.sleep(10)
 
         guardar(final=True)
 
