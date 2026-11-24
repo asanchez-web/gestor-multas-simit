@@ -58,11 +58,19 @@ jobs:
       - name: Instalar dependencias
         run: pip install -q gspread google-auth
       - name: Consolidar el Google Sheet
+        id: consolidar
         env:
           GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
           SHEET_ID: ${{ secrets.SHEET_ID }}
           MODO: consolidar
         run: python robot/robot_multas.py
+      - name: Si quedan pendientes, lanzar la siguiente corrida
+        if: steps.consolidar.outputs.pendientes != '' && steps.consolidar.outputs.pendientes != '0'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "Quedan ${{ steps.consolidar.outputs.pendientes }} pendientes: se lanza otra corrida."
+          gh workflow run robot-multas.yml --ref main -R "${{ github.repository }}"
       - name: Mantener activo el horario
         if: always()
         env:

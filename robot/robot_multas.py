@@ -31,7 +31,8 @@ sys.path.insert(0, RAIZ)
 TZ = ZoneInfo("America/Bogota")
 LIMITE_MINUTOS = float(os.environ.get("LIMITE_MINUTOS", "320"))   # ~5h20 por corrida
 LOTE_GUARDADO = 25            # cada cuántas consultas se escribe en el Sheet
-MAX_ERRORES_SEGUIDOS = 15     # si el SIMIT falla tanto seguido, se para y sigue la próxima corrida
+MAX_ERRORES_SEGUIDOS = 40     # tope de errores seguidos (con pausas de enfriamiento) antes de parar la corrida
+PAUSAS_ENFRIAMIENTO = {5: 120, 10: 300, 20: 600, 30: 900}   # errores seguidos -> segundos de pausa
 CLIENTES_ANTES_DE_REFRESCO = 20
 PAUSA_ENTRE_CONSULTAS = 3
 PAUSA_APERTURA = 8        # segundos tras abrir SIMIT en un navegador nuevo
@@ -240,10 +241,56 @@ def armar_cgen(clientes, mes):
 
 
 # ─── Consulta SIMIT ─────────────────────────────────────────────────────────
+def cerrar_ventanas(sb):
+    """Cierra avisos/modales que tapen el buscador."""
+    try:
+        sb.execute_script("""
+            document.querySelectorAll('.modal.show .close, .modal.show [data-dismiss=modal], .swal2-confirm, .swal2-close')
+                .forEach(b => { try { b.click(); } catch (e) {} });
+            document.querySelectorAll('.modal-backdrop').forEach(b => b.remove());
+        """)
+    except Exception:
+        pass
+
+
+def escribir_y_buscar_js(sb, cedula):
+    """Plan B: escribe la cédula y da clic en Buscar por JavaScript."""
+    sb.execute_script("""
+        const i = document.querySelector('#txtBusqueda');
+        i.focus(); i.value = arguments[0];
+        i.dispatchEvent(new Event('input', {bubbles: true}));
+        i.dispatchEvent(new Event('change', {bubbles: true}));
+    """, cedula)
+    time.sleep(1)
+    sb.js_click("#btnNumDocPlaca")
+    time.sleep(4)
+
+
+def diagnostico(sb):
+    """Pistas de por qué falló, SIN datos del cliente (los logs son públicos)."""
+    try:
+        t = sb.get_text("body").lower()
+        pistas = {
+            "captcha": "captcha" in t or "no soy un robot" in t,
+            "cloudflare": "cloudflare" in t or "verify you are human" in t or "verifique que es humano" in t,
+            "limite": "demasiad" in t or "intente más tarde" in t or "intente mas tarde" in t,
+            "buscador_visible": sb.is_element_visible("#txtBusqueda"),
+            "modal_abierto": sb.is_element_visible(".modal.show") or sb.is_element_visible(".swal2-popup"),
+        }
+        return " ".join(f"{k}={'si' if v else 'no'}" for k, v in pistas.items())
+    except Exception as e:
+        return f"sin_diagnostico({type(e).__name__})"
+
+
 def consultar_una(sb, S, cedula):
     """Devuelve el total de multas de una cédula (lanza excepción si falla)."""
     S.navegar_a_busqueda(sb)
-    S.consultar_cedula(sb, cedula)
+    cerrar_ventanas(sb)
+    try:
+        S.consultar_cedula(sb, cedula)
+    except Exception:
+        cerrar_ventanas(sb)
+        escribir_y_buscar_js(sb, cedula)
     texto = sb.get_text("body").lower()
     if ("se han encontrado varios resultados" in texto or "múltiples" in texto
             or sb.is_element_visible(".modalMultiplesPersonas")):
@@ -344,20 +391,20 @@ def main():
                         except Exception as e:
                             errores += 1
                             errores_seguidos += 1
-                            print(f"  error #{errores}: {type(e).__name__}")
+                            pista = "navegador caído" if navegador_caido(e) else diagnostico(sb)
+                            print(f"  error #{errores} ({errores_seguidos} seguidos): {type(e).__name__} | {pista}")
                             if errores_seguidos >= MAX_ERRORES_SEGUIDOS:
                                 print("Demasiados errores seguidos (posible bloqueo del SIMIT). Se para esta corrida.")
                                 parar = True
                                 break
-                            if navegador_caido(e):
-                                print("  navegador caído: se abre uno nuevo")
-                                pos = inicio_lote + j + 1   # los que faltaban del lote se reintentan
-                                break
-                            try:
-                                sb.refresh_page()
-                                time.sleep(3)
-                            except Exception:
-                                break
+                            pausa = PAUSAS_ENFRIAMIENTO.get(errores_seguidos)
+                            if pausa:
+                                print(f"  pausa de enfriamiento {pausa // 60} min")
+                                time.sleep(pausa)
+                            # Navegador nuevo y se reintenta lo que faltaba del lote
+                            # (el cliente que falló queda pendiente para otra corrida)
+                            pos = inicio_lote + j + 1
+                            break
                         time.sleep(PAUSA_ENTRE_CONSULTAS)
             except Exception as e:
                 errores += 1
@@ -401,6 +448,10 @@ def main():
         ["consultados_hoy", consultados_hoy],
         ["robots_en_paralelo", TOTAL_ROBOTS],
     ])
+    salida = os.environ.get("GITHUB_OUTPUT")
+    if salida:
+        with open(salida, "a") as f:
+            f.write(f"pendientes={faltan}\n")
     print(f"Fin: {consultados} consultados, {errores} errores, pendientes {faltan}, "
           f"CGEN {len(cgen)} filas")
 
